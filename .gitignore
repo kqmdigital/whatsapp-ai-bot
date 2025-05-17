@@ -1,0 +1,30 @@
+# Node Modules
+node_modules/
+
+# Environment Variables
+.env
+.env.*
+
+# WhatsApp Session Files
+.wwebjs_auth/session-*/
+
+# Log Files
+*.log
+logs/
+
+# Mac
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build Directories
+dist/
+build/
+
+# Temporary Files
+tmp/
+temp/
