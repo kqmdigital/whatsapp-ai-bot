@@ -156,3 +156,49 @@ function configureRoutes(app, client, supabase, log) {
         repliesCount: count,
         replies: data || []
       });
+
+    } catch (err) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Get chat history
+  app.get('/chat-history/:chatId', async (req, res) => {
+    try {
+      const { chatId } = req.params;
+      const limit = parseInt(req.query.limit || '20');
+      
+      // Get recent messages
+      const { data: messages, error } = await supabase
+        .from('whatsapp_messages')
+        .select('*')
+        .eq('chat_id', chatId)
+        .order('timestamp', { ascending: false })
+        .limit(limit);
+        
+      if (error) {
+        return res.status(500).json({ success: false, error: error.message });
+      }
+      
+      return res.status(200).json({
+        success: true,
+        chatId,
+        messages: messages.reverse() // Return in chronological order
+      });
+    } catch (err) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Helper function to format uptime
+  function formatUptime(ms) {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    return `${days}d ${hours % 24}h ${minutes % 60}m ${seconds % 60}s`;
+  }
+}
+
+module.exports = { configureRoutes };
