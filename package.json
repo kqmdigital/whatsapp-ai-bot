@@ -1,10 +1,11 @@
 {
-  "name": "whatsapp-bot-render",
-  "version": "1.0.0",
-  "description": "A 24/7 WhatsApp bot using whatsapp-web.js",
+  "name": "whatsapp-ai-bot",
+  "version": "1.1.0",
+  "description": "A WhatsApp AI bot with Google Sheets contact management and Supabase message storage",
   "main": "index.js",
   "scripts": {
-    "start": "node --expose-gc index.js"
+    "start": "node --expose-gc index.js",
+    "dev": "nodemon index.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",
