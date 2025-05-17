@@ -1,4 +1,4 @@
-const axios = require('axios');
+const { clientContacts, employeeContacts } = require('./contacts');
 
 // Cache for contacts
 let clientContacts = new Map();
@@ -6,70 +6,60 @@ let employeeContacts = new Map();
 let lastDataRefresh = 0;
 const DATA_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
 
-// Function to refresh contact data from Google Sheets via n8n
+// Function to refresh contact data from Supabase
 async function refreshContactData(log) {
   const now = Date.now();
   if (now - lastDataRefresh < DATA_REFRESH_INTERVAL) {
     return;
   }
 
-  log('info', 'Refreshing contact data from Google Sheets...');
+  log('info', 'Refreshing contact data from Supabase...');
 
   try {
-    // Fetch client data
-    const clientResponse = await axios.get(process.env.N8N_CLIENT_DATA_URL, { timeout: 10000 });
-    if (clientResponse.data && Array.isArray(clientResponse.data.clients)) {
+    // Fetch client data from Supabase
+    const { data: clients, error: clientError } = await supabase
+      .from('client_contacts')
+      .select('*');
+      
+    if (clientError) {
+      log('error', `Failed to fetch clients: ${clientError.message}`);
+    } else {
       // Clear and repopulate client map
       clientContacts.clear();
       
-      clientResponse.data.clients.forEach(client => {
-        if (client.phone) {
-          const phoneNumber = formatPhoneNumber(client.phone);
-          clientContacts.set(phoneNumber, client);
-          clientContacts.set(`${phoneNumber}@c.us`, client);
-        }
+      clients.forEach(client => {
+        const phoneNumber = client.phone_number;
+        clientContacts.set(phoneNumber, client);
+        clientContacts.set(`${phoneNumber}@c.us`, client);
       });
       
-      log('info', `✅ Loaded ${clientContacts.size/2} clients from Google Sheets`);
+      log('info', `✅ Loaded ${clientContacts.size/2} clients from Supabase`);
     }
 
-    // Fetch employee data
-    const employeeResponse = await axios.get(process.env.N8N_EMPLOYEE_DATA_URL, { timeout: 10000 });
-    if (employeeResponse.data && Array.isArray(employeeResponse.data.employees)) {
+    // Fetch employee data from Supabase
+    const { data: employees, error: employeeError } = await supabase
+      .from('employee_contacts')
+      .select('*');
+      
+    if (employeeError) {
+      log('error', `Failed to fetch employees: ${employeeError.message}`);
+    } else {
       // Clear and repopulate employee map
       employeeContacts.clear();
       
-      employeeResponse.data.employees.forEach(employee => {
-        if (employee.phone) {
-          const phoneNumber = formatPhoneNumber(employee.phone);
-          employeeContacts.set(phoneNumber, employee);
-          employeeContacts.set(`${phoneNumber}@c.us`, employee);
-        }
+      employees.forEach(employee => {
+        const phoneNumber = employee.phone_number;
+        employeeContacts.set(phoneNumber, employee);
+        employeeContacts.set(`${phoneNumber}@c.us`, employee);
       });
       
-      log('info', `✅ Loaded ${employeeContacts.size/2} employees from Google Sheets`);
+      log('info', `✅ Loaded ${employeeContacts.size/2} employees from Supabase`);
     }
 
     lastDataRefresh = now;
   } catch (err) {
     log('error', `Failed to refresh contact data: ${err.message}`);
   }
-}
-
-// Helper to standardize phone number format
-function formatPhoneNumber(phone) {
-  // Strip all non-numeric characters
-  let cleaned = ('' + phone).replace(/\D/g, '');
-  
-  // Ensure it starts with country code (default to 65 for Singapore)
-  if (cleaned.length === 8) {
-    cleaned = '65' + cleaned; // Add Singapore country code
-  } else if (cleaned.length === 10 && cleaned.startsWith('0')) {
-    // For numbers like 0812345678, assume it's missing country code
-    cleaned = '65' + cleaned.substring(1);
-  }
-  
-  return cleaned;
 }
 
 // Helper to check if sender is client or employee
@@ -92,6 +82,22 @@ function getSenderRole(senderId) {
   }
   
   return { role: 'unknown', data: null };
+}
+
+// Helper to standardize phone number format
+function formatPhoneNumber(phone) {
+  // Strip all non-numeric characters
+  let cleaned = ('' + phone).replace(/\D/g, '');
+  
+  // Ensure it starts with country code (default to 65 for Singapore)
+  if (cleaned.length === 8) {
+    cleaned = '65' + cleaned; // Add Singapore country code
+  } else if (cleaned.length === 10 && cleaned.startsWith('0')) {
+    // For numbers like 0812345678, assume it's missing country code
+    cleaned = '65' + cleaned.substring(1);
+  }
+  
+  return cleaned;
 }
 
 module.exports = {
