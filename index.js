@@ -326,17 +326,23 @@ async function triggerAIResponse(msg, client, supabase, log) {
     });
     
     // If we received a response, send it
-    if (response.data && response.data.response) {
-      log('info', `✅ Received AI response (${response.data.response.length} chars)`);
-      // Add optional mention in group chats
-      const responseText = isGroup && senderData?.name ? 
-        `@${senderData.name} ${response.data.response}` :
-        response.data.response;
-        
-      await chat.sendMessage(responseText, { quotedMessageId: msg.id._serialized });
-    } else {
-      log('warn', '❌ No valid response received from AI service');
-    }
+   if (response.data && response.data.response) {
+  log('info', `✅ Received AI response (${response.data.response.length} chars)`);
+  // Add optional mention in group chats
+  const responseText = isGroup && senderData?.name ? 
+    `@${senderData.name} ${response.data.response}` :
+    response.data.response;
+    
+  // Try sending with quotedMessageId first
+  try {
+    await chat.sendMessage(responseText, { quotedMessageId: msg.id._serialized });
+  } catch (quoteError) {
+    log('warn', `Failed to quote message ${msg.id._serialized}: ${quoteError.message}. Sending without quote.`);
+    await chat.sendMessage(responseText); // Send without quoting if it fails
+  }
+} else {
+  log('warn', '❌ No valid response received from AI service');
+}
   } catch (err) {
     log('error', `❌ Error triggering AI response: ${err.message}`);
   }
