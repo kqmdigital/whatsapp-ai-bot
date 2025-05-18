@@ -80,4 +80,70 @@ function getSenderRole(senderId) {
     };
   }
   
-  if (employeeContacts.has(normalizedId) || employeeContacts.has(cle
+  if (employeeContacts.has(normalizedId) || employeeContacts.has(cleanPhone)) {
+    return {
+      role: 'employee',
+      data: employeeContacts.get(normalizedId) || employeeContacts.get(cleanPhone)
+    };
+  }
+  
+  return { role: 'unknown', data: null };
+}
+
+// Function to check if a phone number belongs to a client
+function isClient(phoneNumber) {
+  const normalizedId = phoneNumber.includes('@c.us') ? phoneNumber : `${phoneNumber}@c.us`;
+  const cleanPhone = phoneNumber.replace('@c.us', '');
+  return clientContacts.has(normalizedId) || clientContacts.has(cleanPhone);
+}
+
+// Function to check if a phone number belongs to an employee
+function isEmployee(phoneNumber) {
+  const normalizedId = phoneNumber.includes('@c.us') ? phoneNumber : `${phoneNumber}@c.us`;
+  const cleanPhone = phoneNumber.replace('@c.us', '');
+  return employeeContacts.has(normalizedId) || employeeContacts.has(cleanPhone);
+}
+
+// Helper to standardize phone number format
+function formatPhoneNumber(phone) {
+  // Strip all non-numeric characters
+  let cleaned = ('' + phone).replace(/\D/g, '');
+  
+  // Ensure it starts with country code (default to 65 for Singapore)
+  if (cleaned.length === 8) {
+    cleaned = '65' + cleaned; // Add Singapore country code
+  } else if (cleaned.length === 10 && cleaned.startsWith('0')) {
+    // For numbers like 0812345678, assume it's missing country code
+    cleaned = '65' + cleaned.substring(1);
+  }
+  
+  return cleaned;
+}
+
+// Function to get contact details
+function getContactDetails(phoneNumber) {
+  const normalizedId = phoneNumber.includes('@c.us') ? phoneNumber : `${phoneNumber}@c.us`;
+  const cleanPhone = phoneNumber.replace('@c.us', '');
+  
+  if (clientContacts.has(normalizedId) || clientContacts.has(cleanPhone)) {
+    const data = clientContacts.get(normalizedId) || clientContacts.get(cleanPhone);
+    return { ...data, type: 'client' };
+  }
+  
+  if (employeeContacts.has(normalizedId) || employeeContacts.has(cleanPhone)) {
+    const data = employeeContacts.get(normalizedId) || employeeContacts.get(cleanPhone);
+    return { ...data, type: 'employee' };
+  }
+  
+  return null;
+}
+
+// Export functions but NOT the Maps directly
+module.exports = {
+  refreshContactData,
+  getSenderRole,
+  formatPhoneNumber,
+  isClient,
+  isEmployee,
+  getContactDetails
+};
