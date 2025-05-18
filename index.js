@@ -417,8 +417,20 @@ app.post('/send-message', async (req, res) => {
       options.quotedMessageId = replyTo;
     }
     
-    // Send the message
-    const sentMessage = await client.sendMessage(chatId, message, options);
+    // Try sending with quotedMessageId first
+    let sentMessage;
+    try {
+      sentMessage = await client.sendMessage(chatId, message, options);
+    } catch (quoteError) {
+      // If it fails and we were trying to quote a message, try again without quoting
+      if (replyTo) {
+        log('warn', `Failed to quote message ${replyTo}: ${quoteError.message}. Sending without quote.`);
+        sentMessage = await client.sendMessage(chatId, message); // Retry without quotedMessageId
+      } else {
+        // Re-throw if error wasn't related to quoting
+        throw quoteError;
+      }
+    }
     
     // Get chat info
     const chat = await client.getChatById(chatId);
@@ -456,7 +468,7 @@ app.post('/send-message', async (req, res) => {
     });
   }
 });
-
+    
 // Add client-status endpoint for health checks
 app.get('/client-status', async (req, res) => {
   try {
