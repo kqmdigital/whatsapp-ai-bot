@@ -376,6 +376,104 @@ app.get('/ping', (req, res) => {
   });
 });
 
+// Add send-message endpoint
+app.post('/send-message', async (req, res) => {
+  try {
+    const { chatId, message, replyTo } = req.body;
+    
+    // Input validation
+    if (!chatId || !message) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Missing required fields: chatId and message are required' 
+      });
+    }
+    
+    // Check if WhatsApp client is ready
+    if (!client) {
+      return res.status(503).json({ 
+        success: false, 
+        error: 'WhatsApp client not initialized',
+        retry: true
+      });
+    }
+    
+    const state = await client.getState();
+    if (state !== 'CONNECTED') {
+      return res.status(503).json({ 
+        success: false, 
+        error: 'WhatsApp client not ready',
+        state: state,
+        retry: true
+      });
+    }
+    
+    // Send the message
+    log('info', `📤 Sending message to ${chatId}`);
+    
+    // Prepare options if replying to a message
+    const options = {};
+    if (replyTo) {
+      options.quotedMessageId = replyTo;
+    }
+    
+    // Send the message
+    const sentMessage = await client.sendMessage(chatId, message, options);
+    
+    // Get chat info
+    const chat = await client.getChatById(chatId);
+    const isGroup = chat.isGroup;
+    const chatName = chat.name || (isGroup ? 'Group Chat' : 'Direct Message');
+    
+    // Store in database
+    const messageData = {
+      messageId: sentMessage.id.id,
+      chatId: chatId,
+      chatType: isGroup ? 'group' : 'dm',
+      chatName: chatName,
+      senderId: 'bot',
+      senderName: 'AI Assistant',
+      senderRole: 'bot',
+      content: message,
+      replyTo: replyTo || null,
+      isFromBot: true,
+      timestamp: new Date().toISOString()
+    };
+    
+    await storeMessage(supabase, messageData, log);
+    
+    // Return success
+    return res.status(200).json({
+      success: true,
+      messageId: sentMessage.id.id,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    log('error', `Error sending message: ${err.message}`);
+    return res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+// Add client-status endpoint for health checks
+app.get('/client-status', async (req, res) => {
+  try {
+    const state = client ? await client.getState() : 'NOT_INITIALIZED';
+    res.status(200).json({
+      state: state,
+      ready: state === 'CONNECTED',
+      uptime: Math.floor((Date.now() - global.startedAt) / 1000)
+    });
+  } catch (err) {
+    res.status(500).json({
+      state: 'ERROR',
+      error: err.message
+    });
+  }
+});
+
 // Configure other routes
 configureRoutes(app, client, supabase, log);
 
