@@ -6,22 +6,7 @@ const express = require('express');
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
-// Import modules
-const { SupabaseStore } = require('./modules/storage');
-const contactsModule = require('./modules/contacts');
-const { handleIncomingMessage, storeMessage, sendToN8nWebhook } = require('./modules/messageHandler');
-const { configureRoutes } = require('./modules/routes');
-
-// Initialize Supabase client
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-// Initialize contacts module with Supabase client
-contactsModule.initializeContactsModule(supabase);
-
-// Use functions from the contacts module
-const { refreshContactData, getSenderRole } = contactsModule;
-
-// Environment variables
+// Environment variables - DEFINE THESE FIRST
 const PORT = process.env.PORT || 3000;
 const SESSION_ID = process.env.WHATSAPP_SESSION_ID || 'default_session';
 const BOT_VERSION = '1.1.0';
@@ -39,6 +24,21 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error('❌ Missing Supabase credentials. Exiting.');
   process.exit(1);
 }
+
+// THEN initialize Supabase client
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// THEN import modules
+const { SupabaseStore } = require('./modules/storage');
+const contactsModule = require('./modules/contacts');
+const { handleIncomingMessage, storeMessage, sendToN8nWebhook } = require('./modules/messageHandler');
+const { configureRoutes } = require('./modules/routes');
+
+// Initialize contacts module with Supabase client
+contactsModule.initializeContactsModule(supabase);
+
+// Use functions from the contacts module
+const { refreshContactData, getSenderRole } = contactsModule;
 
 // Configure logging
 const log = (level, message, ...args) => {
