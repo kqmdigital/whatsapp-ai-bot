@@ -98,7 +98,6 @@ function setupClientEvents(c) {
   c.on('qr', qr => {
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(qr)}`;
     log('warn', `📱 Scan QR Code: ${qrUrl}`);
-    qrcode.generate(qr, { small: true }); // Generate terminal QR code for backup
   });
 
   c.on('ready', async () => {
