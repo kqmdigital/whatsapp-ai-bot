@@ -40,9 +40,6 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   process.exit(1);
 }
 
-// Initialize Supabase client
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
 // Configure logging
 const log = (level, message, ...args) => {
   const timestamp = new Date().toISOString();
