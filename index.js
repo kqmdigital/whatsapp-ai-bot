@@ -69,11 +69,18 @@ function createWhatsAppClient() {
       fs.writeFileSync(gitkeepPath, '');
     }
 
+    // Create a tmp directory for RemoteAuth to use
+    const tmpDir = path.join(__dirname, 'tmp');
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true });
+    }
+
     return new Client({
       authStrategy: new RemoteAuth({
         store: supabaseStore,
         backupSyncIntervalMs: 300000,
         dataPath: sessionPath,
+        tempDir: tmpDir, // Add this to specify where temp files should go
       }),
       puppeteer: {
         headless: true,
