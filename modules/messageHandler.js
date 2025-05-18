@@ -31,10 +31,10 @@ async function storeMessage(supabase, messageData, log) {
 
 // Send message to n8n webhook
 async function sendToN8nWebhook(payload, attempt = 0, log) {
-  const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
+  const N8N_AI_WEBHOOK_URL = process.env.N8N_AI_WEBHOOK_URL;
   
-  if (!N8N_WEBHOOK_URL) {
-    log('warn', 'Webhook skipped: N8N_WEBHOOK_URL not set.');
+  if (!N8N_AI_WEBHOOK_URL) {
+    log('warn', 'Webhook skipped: N8N_AI_WEBHOOK_URL not set.');
     return;
   }
 
@@ -54,7 +54,7 @@ async function sendToN8nWebhook(payload, attempt = 0, log) {
   }
 
   try {
-    await axios.post(N8N_WEBHOOK_URL, payload, { timeout: 10000 });
+    await axios.post(N8N_AI_WEBHOOK_URL, payload, { timeout: 10000 });
     log('info', `✅ Webhook sent (${payloadSize} bytes).`);
   } catch (err) {
     log('error', `Webhook attempt ${attempt + 1} failed: ${err.message}`);
