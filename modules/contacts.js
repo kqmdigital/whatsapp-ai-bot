@@ -2,7 +2,7 @@
 
 // The supabase import is missing or incorrect
 // Replace this line:
-const { supabase } = require('./storage');
+// const { supabase } = require('./storage');
 
 // With this line that takes supabase as a parameter:
 let supabaseClient;
@@ -92,7 +92,6 @@ function getSenderRole(senderId) {
   if (!senderId) {
     return { role: 'unknown', data: null };
   }
-
   const normalizedId = senderId.includes('@c.us') ? senderId : `${senderId}@c.us`;
   const cleanPhone = senderId.replace('@c.us', '');
   
@@ -117,4 +116,65 @@ function getSenderRole(senderId) {
 function isClient(phoneNumber) {
   if (!phoneNumber) return false;
   
-  const normal
+  const normalizedId = phoneNumber.includes('@c.us') ? phoneNumber : `${phoneNumber}@c.us`;
+  const cleanPhone = phoneNumber.replace('@c.us', '');
+  return clientContacts.has(normalizedId) || clientContacts.has(cleanPhone);
+}
+
+// Function to check if a phone number belongs to an employee
+function isEmployee(phoneNumber) {
+  if (!phoneNumber) return false;
+  
+  const normalizedId = phoneNumber.includes('@c.us') ? phoneNumber : `${phoneNumber}@c.us`;
+  const cleanPhone = phoneNumber.replace('@c.us', '');
+  return employeeContacts.has(normalizedId) || employeeContacts.has(cleanPhone);
+}
+
+// Helper to standardize phone number format
+function formatPhoneNumber(phone) {
+  if (!phone) return '';
+  
+  // Strip all non-numeric characters
+  let cleaned = ('' + phone).replace(/\D/g, '');
+  
+  // Ensure it starts with country code (default to 65 for Singapore)
+  if (cleaned.length === 8) {
+    cleaned = '65' + cleaned; // Add Singapore country code
+  } else if (cleaned.length === 10 && cleaned.startsWith('0')) {
+    // For numbers like 0812345678, assume it's missing country code
+    cleaned = '65' + cleaned.substring(1);
+  }
+  
+  return cleaned;
+}
+
+// Function to get contact details
+function getContactDetails(phoneNumber) {
+  if (!phoneNumber) return null;
+  
+  const normalizedId = phoneNumber.includes('@c.us') ? phoneNumber : `${phoneNumber}@c.us`;
+  const cleanPhone = phoneNumber.replace('@c.us', '');
+  
+  if (clientContacts.has(normalizedId) || clientContacts.has(cleanPhone)) {
+    const data = clientContacts.get(normalizedId) || clientContacts.get(cleanPhone);
+    return { ...data, type: 'client' };
+  }
+  
+  if (employeeContacts.has(normalizedId) || employeeContacts.has(cleanPhone)) {
+    const data = employeeContacts.get(normalizedId) || employeeContacts.get(cleanPhone);
+    return { ...data, type: 'employee' };
+  }
+  
+  return null;
+}
+
+// Export functions but NOT the Maps directly
+module.exports = {
+  initializeContactsModule,
+  refreshContactData,
+  getSenderRole,
+  formatPhoneNumber,
+  isClient,
+  isEmployee,
+  getContactDetails
+};
