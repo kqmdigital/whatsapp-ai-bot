@@ -313,7 +313,7 @@ async function triggerAIResponse(msg, client, supabase, log) {
       senderId: msg.author || msg.from,
       senderRole: senderRole,
       senderData: senderData,
-      message: msg.body,
+      text: msg.body,
       timestamp: new Date(msg.timestamp * 1000).toISOString(),
       history: formattedHistory,
       isGroup: isGroup
