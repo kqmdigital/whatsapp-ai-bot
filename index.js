@@ -8,9 +8,18 @@ const { createClient } = require('@supabase/supabase-js');
 
 // Import modules
 const { SupabaseStore } = require('./modules/storage');
-const { refreshContactData, getSenderRole } = require('./modules/contacts');
+const contactsModule = require('./modules/contacts');
 const { handleIncomingMessage, storeMessage, sendToN8nWebhook } = require('./modules/messageHandler');
 const { configureRoutes } = require('./modules/routes');
+
+// Initialize Supabase client
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Initialize contacts module with Supabase client
+contactsModule.initializeContactsModule(supabase);
+
+// Use functions from the contacts module
+const { refreshContactData, getSenderRole } = contactsModule;
 
 // Environment variables
 const PORT = process.env.PORT || 3000;
