@@ -22,7 +22,33 @@ CREATE TABLE whatsapp_messages (
   timestamp TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+-- Client contacts table
+CREATE TABLE client_contacts (
+  id SERIAL PRIMARY KEY,
+  phone_number TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  company TEXT,
+  type TEXT,
+  notes TEXT,
+  last_contact TEXT,
+  important_info TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
+-- Employee contacts table
+CREATE TABLE employee_contacts (
+  id SERIAL PRIMARY KEY,
+  phone_number TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  department TEXT,
+  role TEXT,
+  is_admin BOOLEAN DEFAULT FALSE,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create indexes for fast phone number lookups
+CREATE INDEX idx_client_phone ON client_contacts (phone_number);
+CREATE INDEX idx_employee_phone ON employee_contacts (phone_number);
 -- Indexes for better performance
 CREATE INDEX idx_chat_timestamp ON whatsapp_messages (chat_id, timestamp DESC);
 CREATE INDEX idx_reply_to ON whatsapp_messages (reply_to);
