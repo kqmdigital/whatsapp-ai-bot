@@ -36,7 +36,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const log = (level, message, ...args) => {
   const timestamp = new Date().toISOString();
   const formatted = `[${timestamp}] [${level.toUpperCase()}] [${SESSION_ID}] ${message}`;
-  console[level](formatted, ...args);
+  console[level === 'debug' ? 'log' : level](formatted, ...args);
 };
 
 // Initialize storage
@@ -96,10 +96,19 @@ function setupClientEvents(c) {
   c.on('qr', qr => {
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(qr)}`;
     log('warn', `📱 Scan QR Code: ${qrUrl}`);
+    qrcode.generate(qr, { small: true }); // Generate terminal QR code for backup
   });
 
-  c.on('ready', () => {
+  c.on('ready', async () => {
     log('info', '✅ WhatsApp client is ready.');
+    
+    // Initialize contacts when client is ready
+    try {
+      await refreshContactData(log);
+      log('info', '✅ Contact data loaded successfully');
+    } catch (err) {
+      log('error', `❌ Failed to load contact data: ${err.message}`);
+    }
   });
 
   c.on('authenticated', () => {
@@ -163,7 +172,55 @@ function setupClientEvents(c) {
     }
   });
 
-  c.on('message', msg => handleIncomingMessage(msg, client, supabase, log));
+  c.on('message', async (msg) => {
+    try {
+      // Get chat to determine if it's a group
+      const chat = await msg.getChat();
+      
+      // Check if it's a direct message and should be ignored
+      if (!chat.isGroup) {
+        log('info', '🚫 DM responses disabled. Ignoring message.');
+        return;
+      }
+      
+      // Forward to message handler
+      await handleIncomingMessage(msg, client, supabase, log);
+      
+      // Trigger n8n webhook for this message
+      if (N8N_WEBHOOK_URL) {
+        try {
+          // Get sender info
+          const senderInfo = await getSenderRole(msg.from);
+          
+          // Prepare data for n8n
+          const webhookData = {
+            messageId: msg.id._serialized,
+            from: msg.from,
+            body: msg.body,
+            timestamp: msg.timestamp,
+            senderInfo,
+            isGroup: chat.isGroup,
+            groupName: chat.isGroup ? chat.name : null,
+            sessionId: SESSION_ID
+          };
+          
+          // Send to n8n webhook
+          await axios.post(N8N_WEBHOOK_URL, webhookData, {
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            timeout: 10000
+          });
+          
+          log('debug', `✅ Message forwarded to n8n webhook: ${msg.id._serialized}`);
+        } catch (err) {
+          log('error', `❌ Failed to forward message to n8n: ${err.message}`);
+        }
+      }
+    } catch (err) {
+      log('error', `❌ Error processing message: ${err.message}`);
+    }
+  });
 }
 
 async function startClient() {
@@ -189,7 +246,36 @@ async function startClient() {
 const app = express();
 app.use(express.json());
 
-// Configure routes
+// Add ping endpoint explicitly
+app.get('/ping', (req, res) => {
+  res.status(200).json({ 
+    status: 'ok', 
+    message: 'WhatsApp bot is running', 
+    version: BOT_VERSION,
+    uptime: Math.floor((Date.now() - global.startedAt) / 1000)
+  });
+});
+
+// Add health endpoint for monitoring
+app.get('/health', async (req, res) => {
+  try {
+    const clientState = client ? await client.getState() : 'NOT_INITIALIZED';
+    res.status(200).json({
+      status: 'ok',
+      whatsapp: clientState,
+      version: BOT_VERSION,
+      uptime: Math.floor((Date.now() - global.startedAt) / 1000)
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: 'error',
+      message: err.message,
+      version: BOT_VERSION
+    });
+  }
+});
+
+// Configure other routes
 configureRoutes(app, client, supabase, log);
 
 // Graceful shutdown handling
