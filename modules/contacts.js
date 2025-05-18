@@ -1,5 +1,3 @@
-const { clientContacts, employeeContacts } = require('./contacts');
-
 // Cache for contacts
 let clientContacts = new Map();
 let employeeContacts = new Map();
