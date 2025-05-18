@@ -12,7 +12,7 @@ const SESSION_ID = process.env.WHATSAPP_SESSION_ID || 'default_session';
 const BOT_VERSION = '1.1.0';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
-const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
+const N8N_AI_WEBHOOK_URL = process.env.N8N_AI_WEBHOOK_URL;
 const ENABLE_DM_RESPONSES = process.env.ENABLE_DM_RESPONSES === 'true';
 const GROUP_RESPONSE_DELAY = parseInt(process.env.GROUP_RESPONSE_DELAY || '10000', 10); // Default 10 seconds
 
