@@ -193,7 +193,7 @@ function setupClientEvents(c) {
         return;
       }
       
-      // Process the message (store in DB and trigger n8n webhook)
+      // Process the message (store in DB only, not triggering n8n)
       await handleIncomingMessage(msg, client, supabase, log);
       
       // For group chats, add delay if configured
@@ -313,7 +313,8 @@ async function triggerAIResponse(msg, client, supabase, log) {
       senderId: msg.author || msg.from,
       senderRole: senderRole,
       senderData: senderData,
-      text: msg.body,
+      message: msg.body,
+      text: msg.body, // Include both 'message' and 'text' for compatibility
       timestamp: new Date(msg.timestamp * 1000).toISOString(),
       history: formattedHistory,
       isGroup: isGroup
@@ -326,23 +327,23 @@ async function triggerAIResponse(msg, client, supabase, log) {
     });
     
     // If we received a response, send it
-   if (response.data && response.data.response) {
-  log('info', `✅ Received AI response (${response.data.response.length} chars)`);
-  // Add optional mention in group chats
-  const responseText = isGroup && senderData?.name ? 
-    `@${senderData.name} ${response.data.response}` :
-    response.data.response;
-    
-  // Try sending with quotedMessageId first
-  try {
-    await chat.sendMessage(responseText, { quotedMessageId: msg.id._serialized });
-  } catch (quoteError) {
-    log('warn', `Failed to quote message ${msg.id._serialized}: ${quoteError.message}. Sending without quote.`);
-    await chat.sendMessage(responseText); // Send without quoting if it fails
-  }
-} else {
-  log('warn', '❌ No valid response received from AI service');
-}
+    if (response.data && response.data.response) {
+      log('info', `✅ Received AI response (${response.data.response.length} chars)`);
+      // Add optional mention in group chats
+      const responseText = isGroup && senderData?.name ? 
+        `@${senderData.name} ${response.data.response}` :
+        response.data.response;
+        
+      // Try sending with quotedMessageId first
+      try {
+        await chat.sendMessage(responseText, { quotedMessageId: msg.id._serialized });
+      } catch (quoteError) {
+        log('warn', `Failed to quote message ${msg.id._serialized}: ${quoteError.message}. Sending without quote.`);
+        await chat.sendMessage(responseText); // Send without quoting if it fails
+      }
+    } else {
+      log('warn', '❌ No valid response received from AI service');
+    }
   } catch (err) {
     log('error', `❌ Error triggering AI response: ${err.message}`);
   }
@@ -438,29 +439,7 @@ app.post('/send-message', async (req, res) => {
       }
     }
     
-    // Get chat info
-    const chat = await client.getChatById(chatId);
-    const isGroup = chat.isGroup;
-    const chatName = chat.name || (isGroup ? 'Group Chat' : 'Direct Message');
-    
-    // Store in database
-    const messageData = {
-      messageId: sentMessage.id.id,
-      chatId: chatId,
-      chatType: isGroup ? 'group' : 'dm',
-      chatName: chatName,
-      senderId: 'bot',
-      senderName: 'AI Assistant',
-      senderRole: 'bot',
-      content: message,
-      replyTo: replyTo || null,
-      isFromBot: true,
-      timestamp: new Date().toISOString()
-    };
-    
-    await storeMessage(supabase, messageData, log);
-    
-    // Return success
+    // Return success immediately - the message_create event will handle storage
     return res.status(200).json({
       success: true,
       messageId: sentMessage.id.id,
