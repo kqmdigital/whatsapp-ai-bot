@@ -9,7 +9,7 @@ const { createClient } = require('@supabase/supabase-js');
 // Import modules
 const { SupabaseStore } = require('./modules/storage');
 const { refreshContactData, getSenderRole } = require('./modules/contacts');
-const { handleIncomingMessage } = require('./modules/messageHandler');
+const { handleIncomingMessage, storeMessage, sendToN8nWebhook } = require('./modules/messageHandler');
 const { configureRoutes } = require('./modules/routes');
 
 // Environment variables
@@ -46,103 +46,6 @@ const supabaseStore = new SupabaseStore(supabase, SESSION_ID, log);
 
 // Initialize WhatsApp client
 let client = null;
-
-// Helper to store message in Supabase
-async function storeMessage(msg, chat, senderRole = 'unknown', senderData = null, isFromBot = false) {
-  try {
-    const chatType = chat.isGroup ? 'group' : 'dm';
-    const chatName = chat.name || (chat.isGroup ? 'Unknown Group' : 'Private Chat');
-    
-    // Get sender info if available
-    let senderName = 'Unknown';
-    try {
-      if (!isFromBot) {
-        if (senderData && senderData.name) {
-          senderName = senderData.name;
-        } else {
-          const contact = await msg.getContact();
-          senderName = contact.pushname || contact.name || 'Unknown';
-        }
-      } else {
-        senderName = 'Bot';
-      }
-    } catch (err) {
-      log('error', `Failed to get contact info: ${err.message}`);
-    }
-    
-    // Prepare message data
-    const messageData = {
-      message_id: msg.id._serialized,
-      chat_id: chat.id._serialized,
-      chat_type: chatType,
-      chat_name: chatName,
-      sender_id: isFromBot ? 'bot' : msg.from,
-      sender_name: senderName,
-      sender_role: isFromBot ? 'bot' : senderRole,
-      content: msg.body,
-      reply_to: msg.quotedMsgId ? msg.quotedMsgId._serialized : null,
-      is_from_bot: isFromBot,
-      timestamp: new Date(msg.timestamp * 1000)
-    };
-    
-    // Insert into Supabase
-    const { data, error } = await supabase
-      .from('whatsapp_messages')
-      .insert(messageData)
-      .select();
-    
-    if (error) {
-      log('error', `Failed to store message: ${error.message}`);
-      return null;
-    }
-    
-    log('debug', `✅ Message stored in database: ${msg.id._serialized}`);
-    return data[0];
-  } catch (err) {
-    log('error', `Error storing message: ${err.message}`);
-    return null;
-  }
-}
-
-// Helper to trigger n8n webhook
-async function triggerN8nWebhook(msg, chat, senderInfo, storedMessage) {
-  if (!N8N_WEBHOOK_URL) return;
-  
-  try {
-    // Prepare data for n8n
-    const webhookData = {
-      messageId: msg.id._serialized,
-      chatId: chat.id._serialized,
-      from: msg.from,
-      body: msg.body,
-      timestamp: msg.timestamp,
-      timestampISO: new Date(msg.timestamp * 1000).toISOString(),
-      isGroup: chat.isGroup,
-      chatName: chat.name,
-      chatType: chat.isGroup ? 'group' : 'dm',
-      senderInfo: senderInfo,
-      senderName: storedMessage?.sender_name || 'Unknown',
-      senderRole: senderInfo?.role || 'unknown',
-      senderData: senderInfo?.data || null,
-      dbMessageId: storedMessage?.id || null,
-      sessionId: SESSION_ID
-    };
-    
-    // Send to n8n webhook
-    const response = await axios.post(N8N_WEBHOOK_URL, webhookData, {
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      timeout: 10000
-    });
-    
-    log('debug', `✅ Message forwarded to n8n webhook: ${msg.id._serialized}`);
-    return response.data;
-  } catch (err) {
-    log('error', `❌ Failed to forward message to n8n: ${err.message}`);
-    return null;
-  }
-}
 
 function createWhatsAppClient() {
   try {
@@ -278,52 +181,40 @@ function setupClientEvents(c) {
         return;
       }
       
-      // Get chat to determine if it's a group
-      const chat = await msg.getChat();
+      // Process the message (store in DB and trigger n8n webhook)
+      await handleIncomingMessage(msg, client, supabase, log);
       
-      // Get sender role
-      const senderInfo = await getSenderRole(msg.from);
-      log('info', `📩 Message from ${senderInfo.role} (${msg.from}) in ${chat.isGroup ? 'group' : 'DM'}: ${msg.body.substring(0, 50)}${msg.body.length > 50 ? '...' : ''}`);
-      
-      // Store message in database
-      const storedMessage = await storeMessage(
-        msg, 
-        chat, 
-        senderInfo.role, 
-        senderInfo.data,
-        false
-      );
-      
-      // Trigger n8n webhook
-      await triggerN8nWebhook(msg, chat, senderInfo, storedMessage);
-      
-      // Check if we should process the message for response
-      if (!chat.isGroup && !ENABLE_DM_RESPONSES) {
-        log('info', '🚫 DM responses disabled. Ignoring message for response.');
-        return;
-      }
-      
-      // For groups, add a delay to allow humans to respond first
-      if (chat.isGroup && GROUP_RESPONSE_DELAY > 0) {
-        log('info', `⏳ Group message: Waiting ${GROUP_RESPONSE_DELAY}ms before responding...`);
+      // For group chats, add delay if configured
+      if (msg.from.endsWith('@g.us') && GROUP_RESPONSE_DELAY > 0) {
+        // Get chat to check for human responses
+        const chat = await msg.getChat();
+        const initialMsgTimestamp = msg.timestamp;
+        
+        log('info', `⏳ Group message: Waiting ${GROUP_RESPONSE_DELAY}ms before AI response...`);
         await new Promise(resolve => setTimeout(resolve, GROUP_RESPONSE_DELAY));
         
-        // Check if anyone has responded in this time
+        // Check if anyone else responded
         const newMessages = await chat.fetchMessages({limit: 10});
         const hasHumanResponse = newMessages.some(newMsg => 
-          newMsg.timestamp > msg.timestamp && 
+          newMsg.timestamp > initialMsgTimestamp && 
           !newMsg.fromMe && 
-          newMsg.from !== msg.from
+          newMsg.author !== msg.author
         );
         
         if (hasHumanResponse) {
-          log('info', '👤 Human already responded, skipping bot response');
+          log('info', '👤 Human already responded, skipping AI response');
           return;
         }
       }
       
-      // Process the message with custom handler
-      await handleIncomingMessage(msg, client, supabase, log);
+      // DM handling based on configuration
+      if (!msg.from.endsWith('@g.us') && !ENABLE_DM_RESPONSES) {
+        log('info', '🚫 DM responses disabled. Message stored but not processing for AI response.');
+        return;
+      }
+      
+      // At this point, we should trigger the AI response for both group and enabled DMs
+      await triggerAIResponse(msg, client, supabase, log);
     } catch (err) {
       log('error', `❌ Error processing message: ${err.message}`);
     }
@@ -333,17 +224,110 @@ function setupClientEvents(c) {
   c.on('message_create', async (msg) => {
     if (msg.fromMe) {
       try {
+        // Get chat info
         const chat = await msg.getChat();
+        const isGroup = chat.isGroup;
+        const chatName = chat.name || (isGroup ? 'Group Chat' : 'Direct Message');
         
-        // Store bot's message
-        await storeMessage(msg, chat, 'bot', null, true);
+        // Store bot's message in database
+        const messageData = {
+          messageId: msg.id.id,
+          chatId: chat.id._serialized,
+          chatType: isGroup ? 'group' : 'dm',
+          chatName: chatName,
+          senderId: 'bot',
+          senderName: 'AI Assistant',
+          senderRole: 'bot',
+          content: msg.body,
+          replyTo: msg.quotedMsgId ? msg.quotedMsgId._serialized : null,
+          isFromBot: true,
+          timestamp: new Date(msg.timestamp * 1000).toISOString()
+        };
         
-        log('debug', `✅ Bot message stored: ${msg.id._serialized}`);
+        await storeMessage(supabase, messageData, log);
+        log('debug', `✅ Bot message stored: ${msg.id.id}`);
       } catch (err) {
         log('error', `❌ Error storing bot message: ${err.message}`);
       }
     }
   });
+}
+
+// Helper function to trigger AI response via n8n
+async function triggerAIResponse(msg, client, supabase, log) {
+  const N8N_AI_WEBHOOK_URL = process.env.N8N_AI_WEBHOOK_URL;
+  
+  if (!N8N_AI_WEBHOOK_URL) {
+    log('warn', 'AI response skipped: N8N_AI_WEBHOOK_URL not set.');
+    return;
+  }
+  
+  try {
+    // Get chat info
+    const chat = await msg.getChat();
+    const isGroup = chat.isGroup;
+    const chatId = chat.id._serialized;
+    
+    // Get sender info
+    const { role: senderRole, data: senderData } = await getSenderRole(msg.author || msg.from);
+    
+    // Get chat history for context
+    const { data: history, error: historyError } = await supabase
+      .from('whatsapp_messages')
+      .select('*')
+      .eq('chat_id', chatId)
+      .order('timestamp', { ascending: false })
+      .limit(15);
+      
+    if (historyError) {
+      log('error', `Failed to retrieve chat history: ${historyError.message}`);
+    }
+    
+    // Format history for AI
+    const formattedHistory = history ? history
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+      .map(msg => {
+        const sender = msg.is_from_bot ? 'Bot' : `${msg.sender_name} (${msg.sender_role})`;
+        return `${sender}: ${msg.content}`;
+      })
+      .join('\n') : '';
+    
+    // Prepare payload for AI webhook
+    const aiRequestData = {
+      messageId: msg.id.id,
+      chatId: chatId,
+      chatType: isGroup ? 'group' : 'dm',
+      chatName: chat.name || 'Chat',
+      senderId: msg.author || msg.from,
+      senderRole: senderRole,
+      senderData: senderData,
+      message: msg.body,
+      timestamp: new Date(msg.timestamp * 1000).toISOString(),
+      history: formattedHistory,
+      isGroup: isGroup
+    };
+    
+    // Send to AI webhook
+    const response = await axios.post(N8N_AI_WEBHOOK_URL, aiRequestData, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000 // 30 second timeout for AI processing
+    });
+    
+    // If we received a response, send it
+    if (response.data && response.data.response) {
+      log('info', `✅ Received AI response (${response.data.response.length} chars)`);
+      // Add optional mention in group chats
+      const responseText = isGroup && senderData?.name ? 
+        `@${senderData.name} ${response.data.response}` :
+        response.data.response;
+        
+      await chat.sendMessage(responseText, { quotedMessageId: msg.id._serialized });
+    } else {
+      log('warn', '❌ No valid response received from AI service');
+    }
+  } catch (err) {
+    log('error', `❌ Error triggering AI response: ${err.message}`);
+  }
 }
 
 async function startClient() {
@@ -378,58 +362,6 @@ app.get('/ping', (req, res) => {
     version: BOT_VERSION,
     uptime: Math.floor((Date.now() - global.startedAt) / 1000)
   });
-});
-
-// Add health endpoint for monitoring
-app.get('/health', async (req, res) => {
-  try {
-    const clientState = client ? await client.getState() : 'NOT_INITIALIZED';
-    res.status(200).json({
-      status: 'ok',
-      whatsapp: clientState,
-      version: BOT_VERSION,
-      uptime: Math.floor((Date.now() - global.startedAt) / 1000)
-    });
-  } catch (err) {
-    res.status(500).json({
-      status: 'error',
-      message: err.message,
-      version: BOT_VERSION
-    });
-  }
-});
-
-// Add contacts endpoint
-app.get('/contacts', async (req, res) => {
-  try {
-    // Refresh contacts first to ensure latest data
-    await refreshContactData(log);
-    
-    // Get counts from database
-    const { count: clientCount, error: clientError } = await supabase
-      .from('client_contacts')
-      .select('*', { count: 'exact', head: true });
-      
-    const { count: employeeCount, error: employeeError } = await supabase
-      .from('employee_contacts')
-      .select('*', { count: 'exact', head: true });
-    
-    if (clientError || employeeError) {
-      throw new Error('Error fetching contact counts');
-    }
-    
-    res.status(200).json({
-      status: 'ok',
-      clients: clientCount || 0,
-      employees: employeeCount || 0,
-      last_refresh: new Date().toISOString()
-    });
-  } catch (err) {
-    res.status(500).json({
-      status: 'error',
-      message: err.message
-    });
-  }
 });
 
 // Configure other routes
