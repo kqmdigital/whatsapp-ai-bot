@@ -47,9 +47,25 @@ const log = (level, message, ...args) => {
   console[level === 'debug' ? 'log' : level](formatted, ...args);
 };
 
+// Function to check if message contains any of the trigger keywords
 function containsTriggerKeyword(messageText) {
-  const triggerKeyword = "MSR AFFORDABILITY Analysis";
-  return messageText && messageText.toUpperCase().includes(triggerKeyword.toUpperCase());
+  if (!messageText) return { found: false, keyword: null };
+  
+  const triggerKeywords = [
+    "MSR AFFORDABILITY Analysis",
+    "MONTHLY REPAYMENT ANALYSIS", 
+    "LOAN REFINANCING ANALYSIS"
+  ];
+  
+  const messageUpper = messageText.toUpperCase();
+  
+  for (const keyword of triggerKeywords) {
+    if (messageUpper.includes(keyword.toUpperCase())) {
+      return { found: true, keyword: keyword };
+    }
+  }
+  
+  return { found: false, keyword: null };
 }
 
 // Initialize storage
