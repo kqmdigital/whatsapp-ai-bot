@@ -289,6 +289,9 @@ async function triggerAIResponse(msg, client, supabase, log) {
     return;
   }
   
+  log('info', `🤖 Triggering AI response for keyword-matched message: "${msg.body.substring(0, 100)}..."`);
+  log('info', `🔗 N8N Webhook URL: ${N8N_AI_WEBHOOK_URL}`);
+  
   try {
     // Get chat info
     const chat = await msg.getChat();
@@ -335,11 +338,16 @@ async function triggerAIResponse(msg, client, supabase, log) {
       isGroup: isGroup
     };
     
+    log('info', `📤 Sending payload to n8n: ${JSON.stringify(aiRequestData, null, 2)}`);
+    
     // Send to AI webhook
     const response = await axios.post(N8N_AI_WEBHOOK_URL, aiRequestData, {
       headers: { 'Content-Type': 'application/json' },
       timeout: 30000 // 30 second timeout for AI processing
     });
+    
+    log('info', `📥 N8N Response Status: ${response.status}`);
+    log('info', `📥 N8N Response Data: ${JSON.stringify(response.data, null, 2)}`);
     
     // If we received a response, send it
     if (response.data && response.data.response) {
@@ -358,9 +366,17 @@ async function triggerAIResponse(msg, client, supabase, log) {
       }
     } else {
       log('warn', '❌ No valid response received from AI service');
+      log('warn', `Response structure: ${JSON.stringify(response.data)}`);
     }
   } catch (err) {
     log('error', `❌ Error triggering AI response: ${err.message}`);
+    if (err.response) {
+      log('error', `HTTP Status: ${err.response.status}`);
+      log('error', `HTTP Response: ${JSON.stringify(err.response.data)}`);
+    }
+    if (err.code) {
+      log('error', `Error Code: ${err.code}`);
+    }
   }
 }
 
