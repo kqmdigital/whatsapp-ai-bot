@@ -47,6 +47,11 @@ const log = (level, message, ...args) => {
   console[level === 'debug' ? 'log' : level](formatted, ...args);
 };
 
+function containsTriggerKeyword(messageText) {
+  const triggerKeyword = "MSR AFFORDABILITY Analysis";
+  return messageText && messageText.toUpperCase().includes(triggerKeyword.toUpperCase());
+}
+
 // Initialize storage
 const supabaseStore = new SupabaseStore(supabase, SESSION_ID, log);
 
@@ -187,50 +192,60 @@ function setupClientEvents(c) {
   });
 
   c.on('message', async (msg) => {
-    try {
-      // Skip messages from yourself
-      if (msg.fromMe) {
-        return;
-      }
-      
-      // Process the message (store in DB only, not triggering n8n)
-      await handleIncomingMessage(msg, client, supabase, log);
-      
-      // For group chats, add delay if configured
-      if (msg.from.endsWith('@g.us') && GROUP_RESPONSE_DELAY > 0) {
-        // Get chat to check for human responses
-        const chat = await msg.getChat();
-        const initialMsgTimestamp = msg.timestamp;
-        
-        log('info', `⏳ Group message: Waiting ${GROUP_RESPONSE_DELAY}ms before AI response...`);
-        await new Promise(resolve => setTimeout(resolve, GROUP_RESPONSE_DELAY));
-        
-        // Check if anyone else responded
-        const newMessages = await chat.fetchMessages({limit: 10});
-        const hasHumanResponse = newMessages.some(newMsg => 
-          newMsg.timestamp > initialMsgTimestamp && 
-          !newMsg.fromMe && 
-          newMsg.author !== msg.author
-        );
-        
-        if (hasHumanResponse) {
-          log('info', '👤 Human already responded, skipping AI response');
-          return;
-        }
-      }
-      
-      // DM handling based on configuration
-      if (!msg.from.endsWith('@g.us') && !ENABLE_DM_RESPONSES) {
-        log('info', '🚫 DM responses disabled. Message stored but not processing for AI response.');
-        return;
-      }
-      
-      // At this point, we should trigger the AI response for both group and enabled DMs
-      await triggerAIResponse(msg, client, supabase, log);
-    } catch (err) {
-      log('error', `❌ Error processing message: ${err.message}`);
+  try {
+    // Skip messages from yourself
+    if (msg.fromMe) {
+      return;
     }
-  });
+    
+    // Always process and store the message in DB
+    await handleIncomingMessage(msg, client, supabase, log);
+    
+    // Check if message contains the trigger keyword
+    const hasTriggerKeyword = containsTriggerKeyword(msg.body);
+    
+    if (!hasTriggerKeyword) {
+      log('info', `📝 Message stored but no trigger keyword found. Message: "${msg.body.substring(0, 50)}..."`);
+      return;
+    }
+    
+    log('info', `🎯 Trigger keyword detected! Processing AI response for: "${msg.body.substring(0, 50)}..."`);
+    
+    // For group chats, add delay if configured
+    if (msg.from.endsWith('@g.us') && GROUP_RESPONSE_DELAY > 0) {
+      // Get chat to check for human responses
+      const chat = await msg.getChat();
+      const initialMsgTimestamp = msg.timestamp;
+      
+      log('info', `⏳ Group message: Waiting ${GROUP_RESPONSE_DELAY}ms before AI response...`);
+      await new Promise(resolve => setTimeout(resolve, GROUP_RESPONSE_DELAY));
+      
+      // Check if anyone else responded
+      const newMessages = await chat.fetchMessages({limit: 10});
+      const hasHumanResponse = newMessages.some(newMsg => 
+        newMsg.timestamp > initialMsgTimestamp && 
+        !newMsg.fromMe && 
+        newMsg.author !== msg.author
+      );
+      
+      if (hasHumanResponse) {
+        log('info', '👤 Human already responded, skipping AI response');
+        return;
+      }
+    }
+    
+    // DM handling based on configuration (only for messages with trigger keyword)
+    if (!msg.from.endsWith('@g.us') && !ENABLE_DM_RESPONSES) {
+      log('info', '🚫 DM responses disabled. Message stored but not processing for AI response.');
+      return;
+    }
+    
+    // Trigger AI response only for messages with the keyword
+    await triggerAIResponse(msg, client, supabase, log);
+  } catch (err) {
+    log('error', `❌ Error processing message: ${err.message}`);
+  }
+});
   
   // Track outgoing messages from the bot
   c.on('message_create', async (msg) => {
